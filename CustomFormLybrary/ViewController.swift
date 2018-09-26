@@ -13,27 +13,25 @@ struct HotspotState {
     var password: String = "Hello"
 }
 
-class ViewController: UITableViewController {
-
-    var state = HotspotState() {
-        didSet {
-            print(state)
-            tableView.beginUpdates()
-            let footer = tableView.footerView(forSection: 0)
-            footer?.textLabel?.text = tableView(tableView, titleForFooterInSection: 0)
-            footer?.setNeedsLayout()
-            
-            let cell = tableView.cellForRow(at: IndexPath(row: 0, section: 1))
-            cell?.detailTextLabel?.text = state.password
-            
-            tableView.endUpdates()
-            UIView.setAnimationsEnabled(true)
-        }
+extension HotspotState {
+    var enabledSectionTitle: String? {
+        return isEnabled ? "Personal Hotspot Enable" : nil
     }
+}
+
+struct Section {
+    var cells: [FormCell]
+    var footerTitle: String?
+}
+
+class ViewController: UITableViewController {
+    
+    var sections: [Section] = []
     var toggle = UISwitch()
     
     init() {
         super.init(style: .grouped)
+        buildSections()
     }
     
     required init?(coder aDecoder: NSCoder) {
@@ -47,60 +45,98 @@ class ViewController: UITableViewController {
         navigationItem.title = "Settings"
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        return 2
+    var state = HotspotState() {
+        didSet {
+            print(state)
+            sections[0].footerTitle = state.enabledSectionTitle
+            sections[1].cells[0].detailTextLabel?.text = state.password
+            
+            reloadSectionFooters()
+ 
+        }
     }
     
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return 1
+    func reloadSectionFooters() {
+        UIView.setAnimationsEnabled(false)
+        tableView.beginUpdates()
+        
+        for index in sections.indices {
+            let footer = tableView.footerView(forSection: index)
+            footer?.textLabel?.text = tableView(tableView, titleForFooterInSection: index)
+            footer?.setNeedsLayout()
+        }
+        tableView.endUpdates()
+        UIView.setAnimationsEnabled(true)
+        
     }
     
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = UITableViewCell(style: .value1, reuseIdentifier: nil)
-        if indexPath.section == 0 {
-        cell.textLabel?.text = "Personal hotspot"
-        cell.contentView.addSubview(toggle)
+    func buildSections() {
+        let toggleCell = FormCell(style: .value1, reuseIdentifier: nil)
+        toggleCell.textLabel?.text = "Personal Hotspot"
+        toggleCell.contentView.addSubview(toggle)
         toggle.isOn = state.isEnabled
         toggle.translatesAutoresizingMaskIntoConstraints = false
         toggle.addTarget(self, action: #selector(toggleChanged(_:)), for: .valueChanged)
-        cell.contentView.addConstraints([
-            toggle.centerYAnchor.constraint(equalTo: cell.contentView.centerYAnchor),
-            toggle.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor)
+        toggleCell.addConstraints([
+            toggle.centerYAnchor.constraint(equalTo: toggleCell.contentView.centerYAnchor),
+            toggle.trailingAnchor.constraint(equalTo: toggleCell.contentView.layoutMarginsGuide.trailingAnchor)
             ])
-            
-        } else if indexPath.section == 1 {
-            cell.textLabel?.text = "Password"
-            cell.detailTextLabel?.text = state.password
-            cell.accessoryType = .disclosureIndicator
-        } else {
-            fatalError()
+        
+        let passwordVC = PasswordVC(password: state.password) { [unowned self] in
+            self.state.password = $0
         }
-        return cell
+        let passwordCell = FormCell(style: .value1, reuseIdentifier: nil)
+        passwordCell.didSelect = { [unowned self] in
+            self.navigationController?.pushViewController(passwordVC, animated: true)
+        }
+        passwordCell.textLabel?.text = "Password"
+        passwordCell.detailTextLabel?.text = state.password
+        passwordCell.accessoryType = .disclosureIndicator
+        passwordCell.shouldHighlight = true
+        sections = [
+            Section(cells: [toggleCell], footerTitle: state.enabledSectionTitle),
+            Section(cells: [passwordCell], footerTitle: nil)
+        ]
+    }
+    
+    
+
+    override func numberOfSections(in tableView: UITableView) -> Int {
+        return sections.count
+    }
+    
+    func cell(for indexPath: IndexPath) -> FormCell {
+        return sections[indexPath.section].cells[indexPath.row]
+    }
+    
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return sections[section].cells.count
+    }
+    
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        return cell(for: indexPath)
     }
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        if indexPath.section == 1 {
-            let passwordVC = PasswordVC(password: state.password) { [unowned self] in
-                self.state.password = $0
-            }
-            navigationController?.pushViewController(passwordVC, animated: true)
-        }
+        cell(for: indexPath).didSelect?()
     }
     
     override func tableView(_ tableView: UITableView, shouldHighlightRowAt indexPath: IndexPath) -> Bool {
-        return indexPath.section != 0
+        return cell(for: indexPath).shouldHighlight
     }
     
     override func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0 {
-            return state.isEnabled ? "Personal hotspot is enabled" : nil
-        }
-        return nil
+        return sections[section].footerTitle
     }
     //MARK:- Handler
     @objc func toggleChanged(_ sender: Any) {
         state.isEnabled = toggle.isOn
     }
+}
+
+class FormCell: UITableViewCell {
+    var shouldHighlight = false
+    var didSelect: (() -> ())?
 }
 
 class PasswordVC: UITableViewController {
